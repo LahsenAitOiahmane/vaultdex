@@ -1,0 +1,4 @@
+<resources>
+    <!-- Base application theme — actual theming done in Compose -->
+    <style name="Theme.VaultDex" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

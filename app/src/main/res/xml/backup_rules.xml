@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    VULN-MANIFEST: allowBackup is enabled (see AndroidManifest.xml).
+    This file intentionally does NOT exclude sensitive shared_prefs or databases
+    from backup, making them extractable via `adb backup`.
+-->
+<full-backup-content>
+    <!-- No exclusions — all data including credentials is backed up -->
+</full-backup-content>

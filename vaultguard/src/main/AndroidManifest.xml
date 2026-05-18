@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- VaultGuard auto-initializes via ContentProvider — no host app changes needed -->
+    <application>
+        <!-- ContentProvider for zero-config auto-initialization -->
+        <provider
+            android:name=".VaultGuardInitializer"
+            android:authorities="${applicationId}.vaultguard.init"
+            android:exported="false"
+            android:multiprocess="false" />
+
+        <!-- Dashboard activity — launched by shake or VaultGuard.launch() -->
+        <activity
+            android:name=".VaultGuardActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize"
+            android:label="VaultGuard Inspector" />
+    </application>
+
+</manifest>
