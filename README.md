@@ -16,22 +16,7 @@ Ce dépôt contient deux composants :
 
 ## Démonstration
 
-<!-- 
-  Espace réservé pour la vidéo démonstrative.
-  
-  Pour ajouter votre vidéo, remplacez le commentaire ci-dessous par l'une des options suivantes :
-
-  Option 1 — Vidéo hébergée (YouTube, Vimeo, etc.) :
-  [![Démonstration VaultGuard](https://img.youtube.com/vi/VOTRE_ID_VIDEO/maxresdefault.jpg)](https://www.youtube.com/watch?v=VOTRE_ID_VIDEO)
-
-  Option 2 — GIF ou vidéo locale dans le dépôt :
-  ![Démonstration VaultGuard](docs/demo.gif)
-
-  Option 3 — Lien simple :
-  [Voir la démonstration vidéo](https://lien-vers-votre-video)
--->
-
-> La vidéo de démonstration sera ajoutée prochainement.
+![Démonstration VaultGuard](demo.mp4)
 
 ---
 

@@ -1,0 +1,428 @@
+%% 
+%% Article VaultGuard — Framework d'Audit de Stockage Sécurisé pour Android
+%% Format SoftwareX / Elsarticle
+%% 
+
+\documentclass[preprint,12pt, a4paper]{elsarticle}
+
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{minted}
+\usepackage{listings}
+
+
+
+
+\setlength{\parindent}{0pt}
+
+% Configuration des listings de code
+\lstdefinestyle{kotlin}{
+    language=Java,
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray},
+    stringstyle=\color{orange},
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    tabsize=4
+}
+
+\journal{SoftwareX}
+
+\usepackage{listings}
+\begin{document}
+\renewcommand{\labelenumii}{\arabic{enumi}.\arabic{enumii}}
+
+\begin{frontmatter}
+
+\title{VaultGuard : Un Framework Agnostique d'Audit de Stockage Sécurisé pour Applications Android}
+
+\author{A. Auteur}
+
+\address{Département d'Informatique, Université, Ville, Pays}
+
+\begin{abstract}
+VaultGuard est un framework Android open source distribué sous forme de module bibliothèque, conçu pour auditer automatiquement le stockage local de n'importe quelle application Android. Sans nécessiter de configuration spécifique ni de modification du code source de l'application hôte, VaultGuard cartographie dynamiquement le sandbox applicatif et applique des heuristiques avancées (entropie de Shannon, détection de données personnelles par expressions régulières, vérification cryptographique) sur quatre couches de stockage : SharedPreferences, bases de données SQLite, fichiers internes et cache. Le framework produit un rapport interactif accessible via un tableau de bord Material~3, déclenché par un geste de secousse de l'appareil. Cet article présente l'architecture modulaire de VaultGuard, ses algorithmes d'analyse, et valide ses capacités de détection sur une application intentionnellement vulnérable comportant plus de vingt failles de stockage représentatives de vulnérabilités observées en production.
+\end{abstract}
+
+\begin{keyword}
+sécurité mobile \sep Android \sep stockage local \sep audit automatisé \sep heuristiques \sep SharedPreferences \sep SQLite \sep Jetpack Compose
+\end{keyword}
+
+\end{frontmatter}
+
+%% ============================================================
+%%  MÉTADONNÉES
+%% ============================================================
+
+\section*{Métadonnées requises}
+\label{}
+
+\section*{Version actuelle du code}
+\label{}
+
+\begin{table}[!h]
+\begin{tabular}{|l|p{6.5cm}|p{6.5cm}|}
+\hline
+\textbf{Nr.} & \textbf{Description} & \textbf{Information} \\
+\hline
+C1 & Version actuelle du code & v1.0.0 \\
+\hline
+C2 & Lien permanent GitHub & \url{https://github.com/VOTRE_NOM/vaultguard} \\
+\hline
+C3 & Licence & MIT \\
+\hline
+C4 & Système de versionnement & Git \\
+\hline
+C5 & Langages et outils & Kotlin, Jetpack Compose, Android SDK, Gradle \\
+\hline
+C6 & Environnement et dépendances & Android Studio 2023.1.1+, JDK 17, Android SDK 34, minSdk 26 \\
+\hline
+C7 & Documentation développeur & \url{https://github.com/VOTRE_NOM/vaultguard/blob/main/README.md} \\
+\hline
+C8 & Email de support & votre.email@example.com \\
+\hline
+\end{tabular}
+\caption{Métadonnées du code (obligatoire)}
+\label{tab:metadata}
+\end{table}
+
+%% ============================================================
+%%  1. MOTIVATION ET SIGNIFICATION
+%% ============================================================
+
+\section{Motivation et signification}
+
+\subsection{Contexte scientifique}
+
+Le stockage local constitue l'une des surfaces d'attaque les plus exploitées sur les plateformes mobiles. Sur Android, chaque application dispose d'un sandbox isolé contenant plusieurs couches de persistance : les SharedPreferences (fichiers XML clé-valeur), les bases de données SQLite gérées par Room, les fichiers internes et le cache applicatif. En théorie, le mécanisme de sandbox d'Android protège ces données des autres applications. En pratique, cette protection est insuffisante face à un attaquant disposant d'un accès physique à l'appareil, d'un accès root, ou simplement de la possibilité d'effectuer une sauvegarde ADB~\cite{owasp_mstg}.
+
+Les études menées par l'OWASP Mobile Security Testing Guide montrent que le stockage non sécurisé de données sensibles figure parmi les dix risques les plus critiques pour les applications mobiles~\cite{owasp_top10}. Malgré cette connaissance, les audits de terrain révèlent que de nombreuses applications en production continuent de stocker des mots de passe, des tokens d'authentification, des clés API tierces et des données personnelles en clair dans des SharedPreferences ou des bases de données non chiffrées~\cite{insecure_storage_study}.
+
+\subsection{Problème adressé}
+
+Les outils existants pour détecter ces vulnérabilités se répartissent en deux catégories. Les outils d'analyse statique (lint, SAST) inspectent le code source à la compilation mais ne voient pas les données réellement écrites à l'exécution. Les outils d'analyse dynamique externes (Frida, Objection) nécessitent un environnement de test dédié, une expertise en instrumentation et ne s'intègrent pas dans le flux de développement quotidien.
+
+VaultGuard comble cet écart en proposant un framework d'audit embarqué qui opère au niveau du runtime, directement dans le processus de l'application cible. Le développeur ajoute une seule ligne de dépendance Gradle, et le framework s'initialise automatiquement, inspecte l'état réel du stockage avec les données que l'application a effectivement écrites, et présente les résultats dans une interface interactive.
+
+\subsection{Utilisation expérimentale}
+
+L'utilisateur intègre VaultGuard dans son projet Android en ajoutant la dépendance suivante dans son fichier de configuration Gradle :
+
+\begin{lstlisting}[style=kotlin]
+debugImplementation(project(":vaultguard"))
+\end{lstlisting}
+
+Aucune autre modification n'est requise. À l'exécution, l'utilisateur secoue l'appareil pour ouvrir le tableau de bord d'audit. Le framework effectue un scan complet du sandbox et affiche une note de sécurité globale accompagnée d'une liste détaillée des vulnérabilités détectées, classées par sévérité et catégorie.
+
+%% ============================================================
+%%  2. DESCRIPTION DU LOGICIEL
+%% ============================================================
+
+\section{Description du logiciel}
+
+\subsection{Architecture logicielle}
+
+VaultGuard adopte une architecture modulaire en sept couches découplées, communiquant via des flux de données Kotlin (StateFlow et SharedFlow). La figure~\ref{fig:architecture} présente une vue d'ensemble de l'architecture.
+
+\begin{figure}[h]
+\centering
+\fbox{\parbox{0.9\textwidth}{
+\textbf{Application Hôte} $\rightarrow$ Context \\
+\hspace*{1cm} $\downarrow$ \\
+\textbf{VaultGuardInitializer} (ContentProvider) \\
+\hspace*{1cm} $\downarrow$ \\
+\textbf{VaultGuard} (Singleton API) \\
+\hspace*{1cm} $\downarrow$ \\
+\hspace*{0.5cm} $\rightarrow$ \textbf{ShakeDetector} $\rightarrow$ Dashboard UI \\
+\hspace*{0.5cm} $\rightarrow$ \textbf{SandboxFileObserver} $\rightarrow$ Micro-audits \\
+\hspace*{0.5cm} $\rightarrow$ \textbf{ScanOrchestrator} \\
+\hspace*{2cm} $\downarrow$ \\
+\hspace*{1.5cm} \textbf{SandboxDiscovery} \\
+\hspace*{1.5cm} 4 Scanners (parallèles) \\
+\hspace*{2cm} $\downarrow$ \\
+\hspace*{1.5cm} \textbf{HeuristicsEngine} \\
+\hspace*{1.5cm} (Entropie $|$ PII $|$ Crypto) \\
+\hspace*{2cm} $\downarrow$ \\
+\hspace*{1.5cm} \textbf{SecurityGrader} (A--F) \\
+\hspace*{2cm} $\downarrow$ \\
+\hspace*{1.5cm} \textbf{Dashboard UI} (Compose)
+}}
+\caption{Architecture générale de VaultGuard}
+\label{fig:architecture}
+\end{figure}
+
+Les couches du framework sont les suivantes :
+
+\begin{itemize}
+    \item \textbf{API publique} — Le singleton \texttt{VaultGuard.kt} coordonne l'initialisation, le déclenchement des scans et le lancement du tableau de bord. \texttt{VaultGuardInitializer.kt} utilise le patron ContentProvider pour s'initialiser automatiquement avant le \texttt{onCreate()} de l'application hôte, selon le même mécanisme employé par Firebase et AndroidX Startup.
+
+    \item \textbf{Découverte} — \texttt{SandboxDiscovery.kt} interroge le Context Android pour résoudre dynamiquement le nom de package, les chemins de données, la liste des fichiers SharedPreferences, les bases de données et les fichiers internes et cache. Aucun chemin n'est codé en dur.
+
+    \item \textbf{Scanners} — Quatre scanners spécialisés (\texttt{SharedPrefsScanner}, \texttt{DatabaseScanner}, \texttt{FileScanner}, \texttt{CacheScanner}) s'exécutent en parallèle via les coroutines Kotlin, coordonnés par le \texttt{ScanOrchestrator}.
+
+    \item \textbf{Heuristiques} — Le \texttt{HeuristicsEngine} orchestre trois analyseurs : le calcul d'entropie de Shannon (\texttt{EntropyAnalyzer}), la détection de données personnelles par expressions régulières (\texttt{PiiDetector}), et la vérification de l'état cryptographique des valeurs (\texttt{CryptoVerifier}).
+
+    \item \textbf{Notation} — Le \texttt{SecurityGrader} agrège les résultats en un score de risque pondéré et attribue une note de A (aucun problème) à F (exposition critique).
+
+    \item \textbf{Surveillance} — Le \texttt{SandboxFileObserver} utilise l'API \texttt{FileObserver} d'Android pour surveiller les répertoires de données en temps réel et déclencher des micro-audits ciblés lors de modifications de fichiers.
+
+    \item \textbf{Interface} — Un tableau de bord Jetpack Compose autonome, doté de son propre thème Material~3, affiche la note de sécurité, les résultats filtrables par catégorie et sévérité, et une console de preuves.
+\end{itemize}
+
+\subsection{Fonctionnalités principales}
+
+\subsubsection{Analyse d'entropie de Shannon}
+
+L'analyseur d'entropie calcule le degré de désordre d'une chaîne de caractères selon la formule :
+
+\begin{equation}
+H(X) = -\sum_{i=1}^{n} p(x_i) \cdot \log_2 p(x_i)
+\end{equation}
+
+où $p(x_i)$ représente la probabilité d'occurrence du caractère $x_i$ dans la chaîne. Un texte en langage naturel produit une entropie de 3 à 4 bits par caractère. Une clé API ou un token cryptographique dépasse typiquement 5,5 bits par caractère. VaultGuard utilise deux seuils : 4,5 bits (valeur suspecte) et 5,5 bits (secret probable).
+
+\subsubsection{Détection de données personnelles}
+
+Le module \texttt{PiiDetector} applique dix familles d'expressions régulières couvrant les adresses email, les numéros de carte bancaire (Visa, Mastercard, Amex, Discover), les tokens JWT, les numéros de téléphone, les numéros de sécurité sociale, les clés API (chaînes hexadécimales de 32 caractères ou plus), le matériel de clé privée (en-têtes PEM), les adresses IP, les blobs Base64 et les noms de clés sensibles (plus de 30 mots-clés).
+
+\subsubsection{Vérification cryptographique}
+
+Le \texttt{CryptoVerifier} évalue l'état cryptographique de chaque valeur en détectant la présence d'\texttt{EncryptedSharedPreferences} via les clés de keyset spécifiques d'AndroidX Security, en identifiant l'encodage Base64 simple (obfuscation sans chiffrement réel), et en signalant les implémentations de chiffrement potentiellement faibles.
+
+\subsubsection{Sondage de bases de données}
+
+Le \texttt{DatabaseScanner} tente d'ouvrir chaque fichier \texttt{.db} avec \texttt{SQLiteDatabase.openDatabase()} sans mot de passe. Si l'ouverture réussit, la base est considérée comme non chiffrée. Le scanner interroge ensuite la table système \texttt{sqlite\_master} pour découvrir dynamiquement toutes les tables, puis lit jusqu'à 50 lignes par table et soumet chaque valeur de cellule au moteur heuristique.
+
+\subsubsection{Système de notation}
+
+Le \texttt{SecurityGrader} attribue un poids à chaque niveau de sévérité et calcule un score cumulé :
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Sévérité} & \textbf{Poids} & \textbf{Note résultante} \\
+\hline
+CRITICAL & 100 & F ($\geq$ 121) \\
+HIGH & 40 & D (61--120) \\
+MEDIUM & 15 & C (21--60) \\
+LOW & 5 & B (1--20) \\
+SECURE & 0 & A (0) \\
+\hline
+\end{tabular}
+\caption{Pondération des sévérités et correspondance avec la note globale}
+\label{tab:grading}
+\end{table}
+
+\subsection{Extrait de code}
+
+L'intégration de VaultGuard dans une application existante se résume à trois étapes dans les fichiers de configuration Gradle :
+
+\begin{lstlisting}[style=kotlin, caption={Intégration de VaultGuard}]
+// settings.gradle.kts
+include(":vaultguard")
+
+// build.gradle.kts (module app)
+dependencies {
+    debugImplementation(project(":vaultguard"))
+}
+\end{lstlisting}
+
+Le lancement programmatique du tableau de bord s'effectue en une ligne :
+
+\begin{lstlisting}[style=kotlin, caption={Lancement du tableau de bord}]
+VaultGuard.launch(context)
+\end{lstlisting}
+
+%% ============================================================
+%%  3. EXEMPLES ILLUSTRATIFS
+%% ============================================================
+
+\section{Exemples illustratifs}
+
+Pour valider les capacités de détection de VaultGuard, nous avons développé VaultDex, une application Android simulant un gestionnaire financier et de notes sécurisées. Cette application embarque volontairement des vulnérabilités de stockage représentatives de failles observées dans des applications en production.
+
+\subsection{Protocole de test}
+
+Le protocole de test suit les étapes suivantes :
+
+\begin{enumerate}
+    \item Installer VaultDex avec VaultGuard intégré en dépendance de débogage
+    \item Se connecter avec des identifiants de test
+    \item Naviguer dans l'application (ajouter des notes, configurer un PIN, exporter une sauvegarde)
+    \item Secouer l'appareil pour déclencher l'audit VaultGuard
+    \item Observer les résultats dans le tableau de bord
+\end{enumerate}
+
+\subsection{Résultats de détection}
+
+VaultGuard détecte avec succès l'ensemble des vulnérabilités injectées dans VaultDex. Le tableau~\ref{tab:findings} présente un extrait des résultats.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|p{5cm}|c|c|}
+\hline
+\textbf{Vulnérabilité détectée} & \textbf{Sévérité} & \textbf{Catégorie} \\
+\hline
+Mot de passe en clair (SharedPrefs) & CRITICAL & SharedPrefs \\
+\hline
+Tokens JWT en clair (SharedPrefs) & CRITICAL & SharedPrefs \\
+\hline
+Clés API tierces (Firebase, AWS, Stripe) & CRITICAL & SharedPrefs \\
+\hline
+Secret client OAuth stocké localement & CRITICAL & SharedPrefs \\
+\hline
+Token biométrique en clair & CRITICAL & SharedPrefs \\
+\hline
+Hash MD5/SHA1 avec sel codé en dur & HIGH & SharedPrefs \\
+\hline
+Base de données non chiffrée & HIGH & Database \\
+\hline
+Numéros de carte bancaire (PAN + CVV) & CRITICAL & Database \\
+\hline
+Dossiers médicaux avec numéro de sécu. & CRITICAL & Database \\
+\hline
+Historique GPS avec adresses physiques & HIGH & Database \\
+\hline
+Sauvegarde JSON non chiffrée & HIGH & Files \\
+\hline
+Certificat X.509 modifiable & CRITICAL & Files \\
+\hline
+Journaux API avec mots de passe & CRITICAL & Cache \\
+\hline
+Profil persistant après déconnexion & HIGH & Cache \\
+\hline
+\end{tabular}
+\caption{Extrait des vulnérabilités détectées par VaultGuard sur VaultDex}
+\label{tab:findings}
+\end{table}
+
+La note de sécurité attribuée par VaultGuard à VaultDex est \textbf{F} (exposition critique), avec un score de risque dépassant largement le seuil de 121 points.
+
+%% ============================================================
+%%  4. IMPACT
+%% ============================================================
+
+\section{Impact}
+
+\subsection{Nouvelles pistes de recherche}
+
+VaultGuard ouvre plusieurs axes de recherche dans le domaine de la sécurité mobile :
+
+\begin{itemize}
+    \item L'étude quantitative de la prévalence des vulnérabilités de stockage dans les applications Android en production, en utilisant VaultGuard comme outil de mesure standardisé.
+    \item Le développement de nouvelles heuristiques d'analyse adaptées aux formats de stockage émergents (DataStore, Protocol Buffers sérialisés, bases de données Realm).
+    \item L'exploration de techniques de correction automatisée, où le framework ne se contenterait pas de détecter les vulnérabilités mais proposerait et appliquerait des correctifs (migration vers \texttt{EncryptedSharedPreferences}, ajout de SQLCipher).
+\end{itemize}
+
+\subsection{Amélioration des pratiques existantes}
+
+L'approche embarquée de VaultGuard modifie la pratique quotidienne des développeurs Android en intégrant l'audit de sécurité directement dans le cycle de développement. Contrairement aux outils externes qui nécessitent une étape séparée d'analyse, VaultGuard fonctionne en continu pendant le développement et le test de l'application. La surveillance en temps réel par \texttt{FileObserver} permet de détecter les régressions de sécurité dès qu'elles surviennent, sans attendre un audit planifié.
+
+Le caractère agnostique du framework le rend applicable à toute application Android sans adaptation. Cette propriété en fait un outil pertinent pour les équipes de sécurité qui auditent des applications tierces, les consultants en sécurité mobile, et les programmes de formation en développement sécurisé.
+
+\subsection{Portée d'utilisation}
+
+VaultGuard est distribué en open source sous licence MIT. Le framework est conçu pour être utilisé dans les environnements suivants :
+
+\begin{itemize}
+    \item Développement interne : intégré en dépendance de débogage dans les projets d'entreprise
+    \item Audit de sécurité : utilisé par les consultants pour évaluer rapidement la posture de stockage d'une application
+    \item Enseignement : employé comme outil pédagogique pour illustrer les vulnérabilités de stockage et les bonnes pratiques
+\end{itemize}
+
+%% ============================================================
+%%  5. CONCLUSIONS
+%% ============================================================
+
+\section{Conclusions}
+
+VaultGuard est un framework d'audit de stockage sécurisé pour Android qui répond à un besoin concret : permettre aux développeurs et aux équipes de sécurité de détecter automatiquement les vulnérabilités de stockage local sans configuration spécifique ni expertise en instrumentation.
+
+Le framework se distingue par trois propriétés. Son caractère agnostique lui permet de fonctionner avec n'importe quelle application Android. Son approche runtime lui permet d'inspecter les données réellement écrites sur l'appareil. Son intégration en une ligne le rend accessible sans modifier le flux de développement existant.
+
+La validation sur VaultDex, une application intentionnellement vulnérable comportant plus de vingt failles de stockage réparties sur quatre couches, confirme la capacité du framework à détecter des vulnérabilités critiques telles que le stockage en clair de mots de passe, de tokens d'authentification, de clés API, de numéros de carte bancaire et de données médicales.
+
+Les perspectives d'évolution incluent l'extension des scanners à de nouveaux formats de stockage (DataStore, Realm), le développement de mécanismes de correction automatisée, et l'intégration dans les pipelines d'intégration continue pour des audits systématiques à chaque build.
+
+%% ============================================================
+%%  REMERCIEMENTS
+%% ============================================================
+
+\section*{Remerciements}
+\label{}
+
+Les auteurs remercient la communauté open source Android et les contributeurs de l'OWASP Mobile Security Testing Guide pour leurs travaux de référence dans le domaine de la sécurité mobile.
+
+%% ============================================================
+%%  RÉFÉRENCES
+%% ============================================================
+
+\begin{thebibliography}{00}
+
+\bibitem{owasp_mstg}
+OWASP Foundation. \textit{Mobile Security Testing Guide (MSTG)}. 2024. Disponible en ligne : \url{https://mas.owasp.org/MASTG/}.
+
+\bibitem{owasp_top10}
+OWASP Foundation. \textit{OWASP Mobile Top 10 – 2024}. Disponible en ligne : \url{https://owasp.org/www-project-mobile-top-10/}.
+
+\bibitem{insecure_storage_study}
+Zuo, C., Lin, Z., Zhang, Y. \textit{Why Does Your Data Leak? Uncovering the Data Leakage in Cloud from Mobile Apps}. IEEE Symposium on Security and Privacy, 2019.
+
+\bibitem{android_keystore}
+Google. \textit{Android Keystore System}. Android Developers Documentation, 2024. Disponible en ligne : \url{https://developer.android.com/privacy-and-security/keystore}.
+
+\bibitem{encrypted_sp}
+Google. \textit{EncryptedSharedPreferences}. AndroidX Security Library, 2024. Disponible en ligne : \url{https://developer.android.com/reference/androidx/security/crypto/EncryptedSharedPreferences}.
+
+\bibitem{sqlcipher}
+Zetetic LLC. \textit{SQLCipher — Full Database Encryption for SQLite}. 2024. Disponible en ligne : \url{https://www.zetetic.net/sqlcipher/}.
+
+\bibitem{shannon}
+Shannon, C.E. \textit{A Mathematical Theory of Communication}. Bell System Technical Journal, 27(3):379--423, 1948.
+
+\bibitem{frida}
+Oleavr. \textit{Frida — Dynamic Instrumentation Toolkit}. 2024. Disponible en ligne : \url{https://frida.re/}.
+
+\end{thebibliography}
+
+%% ============================================================
+%%  VERSION EXÉCUTABLE
+%% ============================================================
+
+\section*{Version exécutable actuelle du logiciel}
+\label{}
+
+\begin{table}[!h]
+\begin{tabular}{|l|p{6.5cm}|p{6.5cm}|}
+\hline
+\textbf{Nr.} & \textbf{Description} & \textbf{Information} \\
+\hline
+S1 & Version exécutable actuelle & v1.0.0 \\
+\hline
+S2 & Lien permanent vers l'exécutable & Module AAR généré via Gradle \\
+\hline
+S3 & Licence & MIT \\
+\hline
+S4 & Système d'exploitation requis & Android 8.0+ (API 26+) \\
+\hline
+S5 & Taille de l'installation & $\sim$2 Mo (module AAR) \\
+\hline
+S6 & Dépendances runtime & AndroidX Compose, Lifecycle, Coroutines, Gson \\
+\hline
+\end{tabular}
+\caption{Métadonnées de la version exécutable}
+\label{tab:executable}
+\end{table}
+
+\end{document}
+\endinput
