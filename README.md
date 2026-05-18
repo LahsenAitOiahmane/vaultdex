@@ -14,7 +14,7 @@ Ce dépôt contient deux composants :
 
 ---
 
-## Démonstration
+## Démonstration Video
 
 ![Démonstration VaultGuard](demo.mp4)
 
